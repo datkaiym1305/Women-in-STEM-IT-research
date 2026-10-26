@@ -4,7 +4,7 @@ Reproducible analysis: Women in STEM/IT in Kyrgyzstan (survey, n≈61)
 --------------------------------------------------------------------
 Usage:   python analysis.py path/to/raw_export.xlsx [output_dir]
 Creates: data/survey_clean_anonymized.xlsx   (cleaned data + codebook, contacts removed)
-         data/specialty_coding.csv           (STEM/non-STEM coding of specialties – EDIT ME)
+         data/specialty_coding.csv           (STEM/non-STEM coding of specialties; manual_code overrides auto_code)
          results/results_tables.xlsx         (all tables)
          figures/*.png                       (all charts)
          results/run_log.txt                 (checks + software versions)
@@ -26,7 +26,7 @@ RAW = Path(sys.argv[1]) if len(sys.argv) > 1 else None
 OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(__file__).parent
 if RAW is None or not RAW.exists():
     sys.exit("Give the path to the raw Google-Forms export, e.g.  python analysis.py raw.xlsx")
-(OUT/"data").mkdir(exist_ok=True); (OUT/"results").mkdir(exist_ok=True); (OUT/"figures").mkdir(exist_ok=True)
+for d in ("data", "results", "figures"): (OUT/d).mkdir(parents=True, exist_ok=True)
 LOG = []
 def log(*a):
     s = " ".join(str(x) for x in a); print(s); LOG.append(s)
@@ -45,8 +45,8 @@ SPEC = [
  (5,"mother_edu","cat","Mother's education"),(6,"father_edu","cat","Father's education"),
  (7,"siblings","num","Number of siblings (free text parsed to number; 'Нас 5' read as 4 siblings)"),
  (8,"birth_order","cat","Birth order in family"),
- (9,"family_finance","lik","Family financial situation in childhood, 1-5 (ANCHORS NOT VERIFIED – check the form)"),
- (10,"family_religiosity","lik","Family religiosity, 1-5 (ANCHORS NOT VERIFIED – check the form)"),
+ (9,"family_finance","lik","Family financial situation in childhood, self-rated 1-5"),
+ (10,"family_religiosity","lik","Family religiosity, self-rated 1-5 (higher = more religious)"),
  (11,"highest_edu","cat","Highest education"),(12,"specialty_text","text","Specialty (free text)"),
  (13,"stem_class","bin","Attended specialised STEM class/programme (1=yes)"),
  (14,"olympiad","bin","Ever took part in a STEM olympiad/competition (1=yes)"),
@@ -54,7 +54,7 @@ SPEC = [
  (16,"why_not","cat","Reason for not taking part (asked if 'No' to STEM class or olympiad)"),
  (17,"role_model","bin","Had a female STEM/IT role model in childhood (1=yes)"),
  (18,"role_model_who","text","Who the role model was (free text)"),
- (19,"parents_support","lik","Parents actively supported my STEM/IT aspirations (assumed 1=strongly disagree … 5=strongly agree)"),
+ (19,"parents_support","lik","Parents actively supported my STEM/IT aspirations (1=strongly disagree … 5=strongly agree)"),
  (20,"teacher_support","lik","Teachers actively supported my STEM aspirations (same scale)"),
  (21,"teacher_suggested","lik","Teachers specifically suggested olympiads/competitions (same scale)"),
  (22,"family_suitable","lik","Family/environment saw STEM/IT as 'suitable' for a woman (same scale)"),
@@ -313,11 +313,11 @@ T["16_data_quality"] = dq[dq.missing_n > 0]
 README = pd.DataFrame({"Notes": [
  "All numbers in this workbook are produced by analysis.py from the raw export (statistical tests cannot be expressed as spreadsheet formulas; re-run the script to reproduce).",
  "Sample: non-random (self-selected) survey; results describe respondents, not all women in Kyrgyzstan. Associations, not causes.",
- "Likert anchors are ASSUMED to be 1=strongly disagree … 5=strongly agree. Verify against your Google Form before interpreting.",
+ "Likert items: 1 = strongly disagree … 5 = strongly agree, treated as ordinal (medians, % agree 4-5, % disagree 1-2).",
  "Mann-Whitney: compares factor scores between people with vs without the outcome; effect = rank-biserial r (−1…+1, 0 = none).",
  "Fisher exact: compares % with the outcome between factor yes/no; effect = odds ratio with 0.5 added to each cell.",
  "p_holm = Holm-adjusted p across all tests in that table. 'survives Holm' is the conservative flag; 'p<.05 only' is exploratory.",
- "STEM field of study is coded from free text by keywords (data/specialty_coding.csv). Review rows with needs_review=1 and edit manual_code.",
+ "STEM field of study is coded from free-text answers by keywords; ambiguous answers are flagged for manual review. Adults with a stated field only.",
  "'n/a' answers are treated as missing; every percentage states its denominator (n).",
  "Sheet 5 has 39 tests, sheet 6 repeats them for adults only as a robustness check."]})
 xl = OUT/"results"/"results_tables.xlsx"
@@ -368,7 +368,7 @@ fig.suptitle("Fig 2. Olympiad participation and STEM study by level of support a
 t = T["4_rq1_reasons_not_taking_part"].iloc[::-1]
 fig, ax = plt.subplots(figsize=(7, 3)); ax.barh(t.reason, t["%"], color="#0072B2")
 for i, (p_, n) in enumerate(zip(t["%"], t.n)): ax.text(p_+.6, i, f"{p_:.0f}% (n={n})", va="center", fontsize=8)
-ax.set_xlim(0, 55); ax.set_xlabel("% of those giving a reason"); ax.set_title(f"Fig 3. Why not a STEM class / olympiad? (n={int(t.n.sum())})"); save(fig, "fig3_reasons_not_taking_part.png")
+ax.set_xlim(0, t["%"].max()*1.3); ax.set_xlabel("% of those giving a reason"); ax.set_title(f"Fig 3. Why not a STEM class / olympiad? (n={int(t.n.sum())})"); save(fig, "fig3_reasons_not_taking_part.png")
 # Fig 4 mentor & role model
 fig, axs = plt.subplots(1, 2, figsize=(9, 3.6), sharey=True)
 for ax, (k, l) in zip(axs, [("mentor","Had a mentor"),("role_model","Had a female role model")]):
@@ -378,7 +378,7 @@ for ax, (k, l) in zip(axs, [("mentor","Had a mentor"),("role_model","Had a femal
             ax.bar(x, p_, .27, color=col, label=ol if (k=="mentor" and xi==0) else None); ax.text(x, p_+1.5, f"{m.sum()}", ha="center", fontsize=7)
     ax.set_xticks([0,1]); ax.set_xticklabels(["No","Yes"]); ax.set_title(l)
 axs[0].set_ylabel("% with outcome (numbers = group n)"); axs[0].legend(frameon=False, fontsize=8, loc="upper left")
-fig.suptitle("Fig 4. Mentors and role models (small groups: 18 mentors, 10 role models)", y=1.04); save(fig, "fig4_mentor_role_model.png")
+fig.suptitle(f"Fig 4. Mentors and role models (small groups: {int((df.mentor==1).sum())} mentors, {int((df.role_model==1).sum())} role models)", y=1.04); save(fig, "fig4_mentor_role_model.png")
 # Fig 5 workplace behaviour
 t = T["13_rq2_colleague_behaviour"]; t = t[t.group.isin(["IT/STEM workers","Non-STEM workers"]) & (t.experience!="None of these")]
 order = list(BEHL.values())[:-1][::-1]
@@ -387,17 +387,17 @@ for j, (g, col) in enumerate([("IT/STEM workers","#0072B2"),("Non-STEM workers",
     tt = t[t.group==g].set_index("experience").loc[order]; y = np.arange(len(order))+(j-.5)*.38
     ax.barh(y, tt["%"], .38, color=col, label=f"{g} (n={int(tt.applicable_n.iloc[0])})")
     for yy, p_, n in zip(y, tt["%"], tt.n): ax.text(p_+1, yy, f"{p_:.0f}% ({int(n)})", va="center", fontsize=7)
-ax.set_yticks(range(len(order))); ax.set_yticklabels(order); ax.set_xlim(0, 75); ax.legend(frameon=False, fontsize=8)
+ax.set_yticks(range(len(order))); ax.set_yticklabels(order); ax.set_xlim(0, t["%"].max()*1.3); ax.legend(frameon=False, fontsize=8)
 ax.set_xlabel("% of those with work experience"); ax.set_title("Fig 5. Experiences with male colleagues\n(very small groups – descriptive only)"); save(fig, "fig5_workplace_behaviour.png")
 # Fig 6/7 RQ3
 t = T["14_rq3_top3_measures"].iloc[::-1]; col = [c for c in t.columns if c.startswith("% of all")][0]
 fig, ax = plt.subplots(figsize=(7.5, 3.6)); ax.barh(t.measure, t[col], color="#0072B2")
 for i, (p_, n) in enumerate(zip(t[col], t.n)): ax.text(p_+.8, i, f"{p_:.0f}% ({n})", va="center", fontsize=8)
-ax.set_xlim(0, 80); ax.set_xlabel("% of respondents"); ax.set_title(f"Fig 6. Measures chosen among the top 3 (n={len(df)}; perceptions, not evidence of effect)"); save(fig, "fig6_rq3_top3_measures.png")
+ax.set_xlim(0, t[col].max()*1.3); ax.set_xlabel("% of respondents"); ax.set_title(f"Fig 6. Measures chosen among the top 3 (n={len(df)}; perceptions, not evidence of effect)"); save(fig, "fig6_rq3_top3_measures.png")
 t = T["15_rq3_one_change"].iloc[::-1]
 fig, ax = plt.subplots(figsize=(7.5, 3.8)); ax.barh(t.change, t["%"], color="#009E73")
 for i, (p_, n) in enumerate(zip(t["%"], t.n)): ax.text(p_+.6, i, f"{p_:.0f}% ({n})", va="center", fontsize=8)
-ax.set_xlim(0, 40); ax.set_xlabel("% of respondents"); ax.set_title(f"Fig 7. The ONE change that would matter most to me (n={len(df)})"); save(fig, "fig7_rq3_one_change.png")
+ax.set_xlim(0, t["%"].max()*1.3); ax.set_xlabel("% of respondents"); ax.set_title(f"Fig 7. The ONE change that would matter most to me (n={len(df)})"); save(fig, "fig7_rq3_one_change.png")
 
 # ------------------------------------------------------------------ 7. LOG
 log("Python", platform.python_version(), "| pandas", pd.__version__, "| scipy", __import__("scipy").__version__)
