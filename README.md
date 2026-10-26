@@ -1,6 +1,6 @@
 # Women in STEM and IT in Kyrgyzstan
 
-**Code, aggregate results and figures** for the high school research project
+**Code, aggregate results and figures** for the independent research project
 *Factors Associated with Girls' and Women's Participation in STEM and IT in Kyrgyzstan: A Survey of 61 Respondents*
 by Datkaiym Zhamalidinova (2026).
 
